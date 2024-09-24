@@ -1,13 +1,8 @@
 use std::collections::HashMap;
 
-use sqlx::{
-    migrate::MigrateDatabase,
-    postgres::{self, PgPoolOptions},
-    Pool, Postgres,
-};
+use sqlx::{migrate::MigrateDatabase, postgres::PgPoolOptions, Pool, Postgres};
 
 const DB_URL: &str = "postgresql://krawat:pwd@localhost:5432/blazinglysac";
-
 
 #[derive(Clone)]
 pub struct AppState {

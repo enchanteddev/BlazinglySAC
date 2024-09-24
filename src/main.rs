@@ -4,8 +4,6 @@ use std::{
 };
 
 use axum::{
-    http::{HeaderMap, HeaderValue},
-    response::{IntoResponse, Redirect},
     routing::{get, post},
     Router,
 };
@@ -14,6 +12,7 @@ use local_ip_address::local_ip;
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 mod models;
+mod views;
 
 #[tokio::main]
 async fn main() {
@@ -58,6 +57,8 @@ async fn main() {
         env_vars,
     };
     let app = Router::new()
+        .route("/home/announcements", get(views::announcements))
+        .route("/home/councils", get(views::councils))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
         .with_state(state);
