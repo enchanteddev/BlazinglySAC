@@ -159,12 +159,14 @@ pub async fn login(
     }
 
     let user_profile = sqlx::query_as::<_, UserProfile>(
-        "SELECT (id, name, email, password) FROM user_profile WHERE email = $1",
+        "SELECT id, name, email, password as password_hash FROM user_profile WHERE email = $1",
     )
     .bind(payload.email)
     .fetch_one(&state.connection)
     .await
-    .map_err(|_| AuthError::InvalidToken)?;
+    .map_err(|e| {
+        println!("Error: {e}");
+        AuthError::WrongCredentials})?;
 
     let password_is_correct =
         verify(payload.password, &user_profile.password_hash).expect("Failed to verify password");

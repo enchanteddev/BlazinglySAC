@@ -37,7 +37,7 @@ pub struct Comment {
 pub async fn threads(State(state): State<AppState>) -> Json<Vec<Thread>> {
     Json(
         sqlx::query_as::<_, Thread>(
-            "SELECT (id, title, content, created_at, club_id, likes) FROM thread",
+            "SELECT id, title, content, created_at, club_id, likes FROM thread",
         )
         .fetch_all(&state.connection)
         .await
@@ -52,7 +52,7 @@ pub async fn comments(
     Json(
         sqlx::query_as::<_, Comment>(
             "SELECT 
-            (comment.id, comment.content, user_profile.user_name, comment.likes, comment.created_at) 
+            comment.id, comment.content, user_profile.user_name, comment.likes, comment.created_at
             FROM comment 
             INNER JOIN user_profile ON comment.user_id = user_profile.id
             WHERE thread_id = $1",
