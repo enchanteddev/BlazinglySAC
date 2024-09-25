@@ -13,10 +13,12 @@ use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 mod models;
 mod views;
+mod thread_comment;
+mod auth;
 
 #[tokio::main]
 async fn main() {
-    // tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 
     match dotenv() {
         Err(load_error) => println!("Failed to load .env, Error: {}", load_error),
@@ -59,6 +61,11 @@ async fn main() {
     let app = Router::new()
         .route("/home/announcements", get(views::announcements))
         .route("/home/councils", get(views::councils))
+        .route("/conversation/threads", get(thread_comment::threads)) 
+        .route("/conversation/comments", get(thread_comment::comments))
+        .route("/auth/login/", post(auth::login))
+        .route("/auth/register/", post(auth::register))
+        .route("/auth/private", get(auth::private))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
         .with_state(state);

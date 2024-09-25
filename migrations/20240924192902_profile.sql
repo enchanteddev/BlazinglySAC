@@ -3,5 +3,11 @@ CREATE TABLE user_profile (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
-    FOREIGN KEY (email) REFERENCES auth(email)
+    password VARCHAR(255) NOT NULL
 );
+
+-- -- Add migration script here
+-- CREATE TABLE auth (
+--     email VARCHAR(255) NOT NULL PRIMARY KEY,
+--     password VARCHAR(255) NOT NULL
+-- );

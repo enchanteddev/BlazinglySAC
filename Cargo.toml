@@ -10,10 +10,13 @@ axum = "0.7.5"
 serde = { version = "1.0.204", features = ["derive"] }
 tokio = { version = "1.39.2", features = ["full"] }
 sqlx = { version = "0.8.0", features = ["runtime-tokio-native-tls", "postgres"] }
-axum-extra = { version = "0.9.3", features = ["cookie"] }
+axum-extra = { version = "0.9.3", features = ["cookie", "typed-header"] }
 time = "0.3.36"
 dotenvy = "0.15.7"
 local-ip-address = "0.6.1"
 tower-http = { version = "0.5.2", features = ["compression-br", "compression-gzip", "trace"] }
 tracing-subscriber = "0.3.18"
 tracing = "0.1.40"
+jsonwebtoken = "9.3.0"
+serde_json = "1.0.128"
+bcrypt = "0.15.1"

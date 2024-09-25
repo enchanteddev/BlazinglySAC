@@ -3,7 +3,7 @@ CREATE TABLE thread (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     club_id INTEGER NOT NULL,
     likes INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (club_id) REFERENCES club(id)
