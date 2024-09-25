@@ -50,8 +50,9 @@ pub struct UserProfile {
 // the JWT claim
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
+    pub id: i32,
     name: String,
-    email: String,
+    pub email: String,
     exp: usize,
 }
 
@@ -183,6 +184,7 @@ pub async fn login(
         + 24 * 3600 * 7;
 
     let claims = Claims {
+        id: user_profile.id,
         name: user_profile.name,
         email: user_profile.email,
         exp: usize::try_from(exp).unwrap(),
@@ -206,14 +208,14 @@ pub async fn register(
     let hashed_password = hash(payload.password, DEFAULT_COST).expect("Hashing Failed");
 
     // now create the user
-    match sqlx::query("INSERT INTO user_profile (name, email, password) VALUES ($1, $2, $3)")
+    let user_id = match sqlx::query_scalar::<_, i32>("INSERT INTO user_profile (name, email, password) VALUES ($1, $2, $3) RETURNING id")
         .bind(&payload.name)
         .bind(&payload.email)
         .bind(hashed_password)
-        .execute(&state.connection)
+        .fetch_one(&state.connection)
         .await
     {
-        Ok(_) => {}
+        Ok(user_id) => user_id, 
         Err(e) => match e {
             Error::Database(db_error) if db_error.is_unique_violation() => {
                 return Err(AuthError::UserAlreadyExists);
@@ -223,7 +225,7 @@ pub async fn register(
                 return Err(AuthError::InternalServerError);
             }
         },
-    }
+    };
 
     // add 5 minutes to current unix epoch time as expiry date/time
     let exp = SystemTime::now()
@@ -233,6 +235,7 @@ pub async fn register(
         + 24 * 3600 * 7;
 
     let claims = Claims {
+        id: user_id,
         name: payload.name,
         email: payload.email,
         exp: usize::try_from(exp).unwrap(),
