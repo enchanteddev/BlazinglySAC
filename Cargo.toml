@@ -6,7 +6,7 @@ edition = "2021"
 
 
 [dependencies]
-axum = { version = "0.7.6" }
+axum = { version = "0.7.6", features=["multipart"]}
 serde = { version = "1.0.204", features = ["derive"] }
 tokio = { version = "1.39.2", features = ["full"] }
 sqlx = { version = "0.8.0", features = ["runtime-tokio-native-tls", "postgres"] }
@@ -19,3 +19,5 @@ tracing = "0.1.40"
 jsonwebtoken = "9.3.0"
 serde_json = "1.0.128"
 bcrypt = "0.15.1"
+blake3 = "1.5.4"
+image = "0.25.2"
