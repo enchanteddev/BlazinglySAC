@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use axum::body::Bytes;
 use axum::extract::{Multipart, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
@@ -24,7 +24,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
 }
 
 async fn handle_upload(connection: &Pool<Postgres>, name: String, data: Bytes) {
-    let extension = name.split('.').last().unwrap();
+    let extension = name.split('.').last().unwrap_or("file"); // no file extemsion was given
     let original_hash = blake3::hash(&data).to_string();
 
     let does_image_exist =
@@ -63,11 +63,21 @@ async fn handle_upload(connection: &Pool<Postgres>, name: String, data: Bytes) {
 }
 
 async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) -> String {
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
+    while let Some(field) = match multipart.next_field().await {
+        Ok(field) => field,
+        Err(err) => return format!("Failed to get field: {}", err),
+    } {
+        let Some(name) = field.name() else {
+            continue;
+        };
         if name == "file" {
-            let file_name = field.file_name().unwrap().to_string();
-            let data = field.bytes().await.unwrap();
+            let Some(file_name) = field.file_name() else {
+                return String::from("File name not found in headers");
+            };
+            let file_name = file_name.to_string();
+            let Ok(data) = field.bytes().await else {
+                return String::from("Failed to get data");
+            };
             println!("Length of `{}` is {} bytes", file_name, data.len());
             tokio::spawn(async move {
                 handle_upload(&state.connection, file_name, data).await;
@@ -82,15 +92,17 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
 async fn view_file(
     Query(query): Query<ViewRequest>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, StatusCode> {
     println!("what");
-    let (file_bytes, file_type) = sqlx::query_scalar::<_, (Vec<u8>, String)>(
+    let Ok((file_bytes, file_type)) = sqlx::query_scalar::<_, (Vec<u8>, String)>(
         "SELECT (blob, file_type) FROM upload WHERE compressed_hash = $1",
     )
     .bind(query.hash)
     .fetch_one(&state.connection)
     .await
-    .unwrap();
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
 
     let mut headers = HeaderMap::new();
     headers.insert("Cache-Control", "max-age=31536000".parse().unwrap());
@@ -101,5 +113,5 @@ async fn view_file(
         headers.insert("Content-Type", file_type.parse().unwrap());
     }
 
-    (headers, file_bytes)
+    Ok((headers, file_bytes))
 }

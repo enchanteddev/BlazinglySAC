@@ -1,6 +1,6 @@
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{body::Body, extract::State, http::{Response, StatusCode}, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, value};
 use sqlx::prelude::FromRow;
 
 use crate::{auth::Claims, models::AppState};
@@ -41,6 +41,32 @@ pub struct Comment {
     pub created_at: i32,
 }
 
+
+pub enum StatusResponse {
+    Success,
+    ServerError,
+    UserError(String)
+}
+
+
+impl IntoResponse for StatusResponse {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            StatusResponse::Success => (StatusCode::OK, Json(json!({
+                "success": true,
+            }))).into_response(),
+            StatusResponse::ServerError => (StatusCode::INTERNAL_SERVER_ERROR,Json(json!({
+                "success": false,
+                "error": "Server Error",
+            }))).into_response(),
+            StatusResponse::UserError(err) => (StatusCode::BAD_REQUEST,Json(json!({
+                "success": false,
+                "error": err,
+            }))).into_response(),
+        }
+    }
+}
+
 pub async fn threads(State(state): State<AppState>) -> Json<Vec<Thread>> {
     Json(
         sqlx::query_as::<_, Thread>(
@@ -76,11 +102,11 @@ pub async fn create_thread(
     claim: Claims,
     State(state): State<AppState>,
     thread_data: Json<NewThreadRequest>,
-) -> impl IntoResponse {
+) -> StatusResponse {
     // Check if user is in club
     let user_id = claim.id;
     let club_id = thread_data.club_id;
-    let privilege_level = sqlx::query_scalar::<_, i32>(
+    let Ok(privilege_level) = sqlx::query_scalar::<_, i32>(
         "
             SELECT privilege_level FROM membership
             WHERE user_id = $1 AND club_id = $2
@@ -90,14 +116,12 @@ pub async fn create_thread(
     .bind(user_id)
     .bind(club_id)
     .fetch_one(&state.connection)
-    .await
-    .unwrap();
+    .await else {
+        return StatusResponse::ServerError;
+    };
 
     if privilege_level <= 1 {
-        return Json(json!({
-            "success": false,
-            "message": "You are not allowed to create threads in this club",
-        }));
+        return StatusResponse::UserError("You are not allowed to create threads in this club".to_string());
     }
 
     match sqlx::query(
@@ -109,13 +133,8 @@ pub async fn create_thread(
     .fetch_one(&state.connection)
     .await
     {
-        Ok(_) => Json(json!({
-            "success": true
-        })),
-        Err(err) => Json(json!({
-            "success": false,
-            "message": err.to_string(),
-        })),
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
     }
 }
 
@@ -124,7 +143,7 @@ pub async fn create_comment(
     claim: Claims,
     State(state): State<AppState>,
     comment_request: Json<NewCommentRequest>,
-) -> impl IntoResponse {
+) -> StatusResponse {
     // Dont check if user is in club
     let user_id = claim.id;
     let thread_id = comment_request.thread_id;
@@ -138,12 +157,7 @@ pub async fn create_comment(
     .execute(&state.connection)
     .await
     {
-        Ok(_) => Json(json!({
-            "success": true
-        })),
-        Err(err) => Json(json!({
-            "success": false,
-            "message": err.to_string(),
-        })),
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
     }
 }
