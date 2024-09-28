@@ -1,6 +1,6 @@
-use axum::{body::Body, extract::State, http::{Response, StatusCode}, response::IntoResponse, Json};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, value};
+use serde_json::json;
 use sqlx::prelude::FromRow;
 
 use crate::{auth::Claims, models::AppState};
@@ -41,28 +41,38 @@ pub struct Comment {
     pub created_at: i32,
 }
 
-
 pub enum StatusResponse {
     Success,
     ServerError,
-    UserError(String)
+    UserError(String),
 }
-
 
 impl IntoResponse for StatusResponse {
     fn into_response(self) -> axum::response::Response {
         match self {
-            StatusResponse::Success => (StatusCode::OK, Json(json!({
-                "success": true,
-            }))).into_response(),
-            StatusResponse::ServerError => (StatusCode::INTERNAL_SERVER_ERROR,Json(json!({
-                "success": false,
-                "error": "Server Error",
-            }))).into_response(),
-            StatusResponse::UserError(err) => (StatusCode::BAD_REQUEST,Json(json!({
-                "success": false,
-                "error": err,
-            }))).into_response(),
+            StatusResponse::Success => (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                })),
+            )
+                .into_response(),
+            StatusResponse::ServerError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "error": "Server Error",
+                })),
+            )
+                .into_response(),
+            StatusResponse::UserError(err) => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "error": err,
+                })),
+            )
+                .into_response(),
         }
     }
 }
@@ -97,7 +107,6 @@ pub async fn comments(
     )
 }
 
-
 pub async fn create_thread(
     claim: Claims,
     State(state): State<AppState>,
@@ -116,12 +125,15 @@ pub async fn create_thread(
     .bind(user_id)
     .bind(club_id)
     .fetch_one(&state.connection)
-    .await else {
+    .await
+    else {
         return StatusResponse::ServerError;
     };
 
     if privilege_level <= 1 {
-        return StatusResponse::UserError("You are not allowed to create threads in this club".to_string());
+        return StatusResponse::UserError(
+            "You are not allowed to create threads in this club".to_string(),
+        );
     }
 
     match sqlx::query(
@@ -138,7 +150,6 @@ pub async fn create_thread(
     }
 }
 
-
 pub async fn create_comment(
     claim: Claims,
     State(state): State<AppState>,
@@ -148,14 +159,12 @@ pub async fn create_comment(
     let user_id = claim.id;
     let thread_id = comment_request.thread_id;
 
-    match sqlx::query(
-        "INSERT INTO comment (content, thread_id, user_id) VALUES ($1, $2, $3)",
-    )
-    .bind(&comment_request.content)
-    .bind(thread_id)
-    .bind(user_id)
-    .execute(&state.connection)
-    .await
+    match sqlx::query("INSERT INTO comment (content, thread_id, user_id) VALUES ($1, $2, $3)")
+        .bind(&comment_request.content)
+        .bind(thread_id)
+        .bind(user_id)
+        .execute(&state.connection)
+        .await
     {
         Ok(_) => StatusResponse::Success,
         Err(err) => StatusResponse::UserError(err.to_string()),

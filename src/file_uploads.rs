@@ -24,7 +24,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
 }
 
 async fn handle_upload(connection: &Pool<Postgres>, name: String, data: Bytes) {
-    let extension = name.split('.').last().unwrap_or("file"); // no file extemsion was given
+    let extension = name.split('.').last().unwrap_or("file"); // no file extension was given
     let original_hash = blake3::hash(&data).to_string();
 
     let does_image_exist =
