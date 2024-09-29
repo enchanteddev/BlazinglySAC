@@ -41,6 +41,11 @@ pub struct Comment {
     pub created_at: i32,
 }
 
+#[derive(FromRow, Deserialize)]
+pub struct LikeRequest {
+    pub id: i32,
+}
+
 pub enum StatusResponse {
     Success,
     ServerError,
@@ -169,4 +174,78 @@ pub async fn create_comment(
         Ok(_) => StatusResponse::Success,
         Err(err) => StatusResponse::UserError(err.to_string()),
     }
+}
+
+pub async fn like_thread(
+    claim: Claims,
+    State(state): State<AppState>,
+    thread_id: Json<LikeRequest>,
+) -> StatusResponse {
+    let user_id = claim.id;
+    let mut transaction = state.connection.begin().await.unwrap();
+
+    match sqlx::query("INSERT INTO thread_likes (user_id, thread_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(thread_id.id)
+        .execute(&mut *transaction)
+        .await
+    {
+        Ok(_) => {}
+        Err(err) => match err {
+            sqlx::Error::Database(err) if err.is_unique_violation() => {
+                return StatusResponse::UserError("You already liked this thread".to_string());
+            }
+            _ => return StatusResponse::ServerError,
+        },
+    };
+
+    let completion_status = match sqlx::query("UPDATE thread SET likes = likes + 1 WHERE id = $1")
+        .bind(thread_id.id)
+        .execute(&mut *transaction)
+        .await
+    {
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
+    };
+
+    transaction.commit().await.unwrap();
+
+    completion_status
+}
+
+pub async fn like_comment(
+    claim: Claims,
+    State(state): State<AppState>,
+    comment_id: Json<LikeRequest>,
+) -> StatusResponse {
+    let user_id = claim.id;
+    let mut transaction = state.connection.begin().await.unwrap();
+
+    match sqlx::query("INSERT INTO comment_likes (user_id, comment_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(comment_id.id)
+        .execute(&mut *transaction)
+        .await
+    {
+        Ok(_) => {}
+        Err(err) => match err {
+            sqlx::Error::Database(err) if err.is_unique_violation() => {
+                return StatusResponse::UserError("You already liked this comment".to_string());
+            }
+            _ => return StatusResponse::ServerError,
+        },
+    };
+
+    let completion_status = match sqlx::query("UPDATE comment SET likes = likes + 1 WHERE id = $1")
+        .bind(comment_id.id)
+        .execute(&mut *transaction)
+        .await
+    {
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
+    };
+
+    transaction.commit().await.unwrap();
+
+    completion_status
 }
