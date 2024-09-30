@@ -4,7 +4,7 @@ CREATE TABLE announcement (
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     club_id INTEGER NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+    updated_at TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
     FOREIGN KEY (club_id) REFERENCES club(id)
 );

@@ -6,7 +6,7 @@ CREATE TABLE membership (
     club_id INTEGER NOT NULL,
     role VARCHAR(255) NOT NULL,
     privilege_level INTEGER NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
     PRIMARY KEY (user_id, club_id),
     FOREIGN KEY (user_id) REFERENCES user_profile(id),
     FOREIGN KEY (club_id) REFERENCES club(id)

@@ -5,5 +5,5 @@ CREATE TABLE upload (
     blob BYTEA NOT NULL,
     original_hash VARCHAR(255) NOT NULL UNIQUE,
     compressed_hash VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
