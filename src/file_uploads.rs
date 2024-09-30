@@ -112,11 +112,11 @@ async fn bind_attachment(
 ) -> Result<(), sqlx::Error> {
     match attachment_id {
         AttachmentId::Announcement(aid) => {
-            match sqlx::query(
+            match sqlx::query!(
                 "INSERT INTO announcement_media (announcement_id, media_id) VALUES ($1, $2)",
+                aid,
+                media_id
             )
-            .bind(aid)
-            .bind(media_id)
             .execute(connection)
             .await
             {
@@ -125,22 +125,26 @@ async fn bind_attachment(
             }
         }
         AttachmentId::Thread(tid) => {
-            match sqlx::query("INSERT INTO thread_media (thread_id, media_id) VALUES ($1, $2)")
-                .bind(tid)
-                .bind(media_id)
-                .execute(connection)
-                .await
+            match sqlx::query!(
+                "INSERT INTO thread_media (thread_id, media_id) VALUES ($1, $2)",
+                tid,
+                media_id
+            )
+            .execute(connection)
+            .await
             {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),
             }
         }
         AttachmentId::Event(eid) => {
-            match sqlx::query("INSERT INTO event_media (event_id, media_id) VALUES ($1, $2)")
-                .bind(eid)
-                .bind(media_id)
-                .execute(connection)
-                .await
+            match sqlx::query!(
+                "INSERT INTO event_media (event_id, media_id) VALUES ($1, $2)",
+                eid,
+                media_id
+            )
+            .execute(connection)
+            .await
             {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),

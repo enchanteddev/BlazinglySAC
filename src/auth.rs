@@ -159,15 +159,17 @@ pub async fn login(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user_profile = sqlx::query_as::<_, UserProfile>(
+    let user_profile = sqlx::query_as!(
+        UserProfile,
         "SELECT id, name, email, password as password_hash FROM user_profile WHERE email = $1",
+        payload.email
     )
-    .bind(payload.email)
     .fetch_one(&state.connection)
     .await
     .map_err(|e| {
         println!("Error: {e}");
-        AuthError::WrongCredentials})?;
+        AuthError::WrongCredentials
+    })?;
 
     let password_is_correct =
         verify(payload.password, &user_profile.password_hash).expect("Failed to verify password");
@@ -208,14 +210,16 @@ pub async fn register(
     let hashed_password = hash(payload.password, DEFAULT_COST).expect("Hashing Failed");
 
     // now create the user
-    let user_id = match sqlx::query_scalar::<_, i32>("INSERT INTO user_profile (name, email, password) VALUES ($1, $2, $3) RETURNING id")
-        .bind(&payload.name)
-        .bind(&payload.email)
-        .bind(hashed_password)
-        .fetch_one(&state.connection)
-        .await
+    let user_id = match sqlx::query_scalar!(
+        "INSERT INTO user_profile (name, email, password) VALUES ($1, $2, $3) RETURNING id",
+        &payload.name,
+        &payload.email,
+        hashed_password
+    )
+    .fetch_one(&state.connection)
+    .await
     {
-        Ok(user_id) => user_id, 
+        Ok(user_id) => user_id,
         Err(e) => match e {
             Error::Database(db_error) if db_error.is_unique_violation() => {
                 return Err(AuthError::UserAlreadyExists);
