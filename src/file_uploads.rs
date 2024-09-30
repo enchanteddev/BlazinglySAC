@@ -7,7 +7,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
-use sqlx::{Pool, Postgres};
+use sqlx::PgConnection;
 
 use crate::models::AppState;
 
@@ -37,7 +37,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
 }
 
 async fn handle_upload(
-    connection: &Pool<Postgres>,
+    connection: &mut PgConnection,
     name: String,
     data: Bytes,
 ) -> Result<i32, FileHandleError> {
@@ -48,7 +48,7 @@ async fn handle_upload(
         "SELECT id FROM upload WHERE original_hash = $1",
         original_hash
     )
-    .fetch_one(connection)
+    .fetch_one(connection.as_mut())
     .await
     {
         Ok(image_id) => return Ok(image_id),
@@ -80,7 +80,7 @@ async fn handle_upload(
         "SELECT id FROM upload WHERE compressed_hash = $1",
         compressed_hash.clone()
     )
-    .fetch_one(connection)
+    .fetch_one(connection.as_mut())
     .await
     {
         Ok(image_id) => return Ok(image_id),
@@ -108,7 +108,7 @@ async fn handle_upload(
 async fn bind_attachment(
     attachment_id: AttachmentId,
     media_id: i32,
-    connection: &Pool<Postgres>,
+    connection: &mut PgConnection,
 ) -> Result<(), sqlx::Error> {
     match attachment_id {
         AttachmentId::Announcement(aid) => {
@@ -219,7 +219,8 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
         return String::from("Attachment ID not found");
     };
     tokio::spawn(async move {
-        let media_id = match handle_upload(&state.connection, fname, data).await {
+        let mut txn = state.connection.begin().await.expect("Failed to start transaction");
+        let media_id = match handle_upload(&mut *txn, fname, data).await {
             Ok(media_id) => media_id,
             Err(e) => {
                 println!("Upload task failed with error: {e:?}");
@@ -227,13 +228,14 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
             }
         };
         println!("Compression task completed");
-        match bind_attachment(att_id, media_id, &state.connection).await {
+        match bind_attachment(att_id, media_id, &mut *txn).await {
             Ok(_) => {}
             Err(e) => {
                 println!("Binding task failed with error: {e:?}");
                 return;
             }
         }
+        txn.commit().await.expect("Failed to commit transaction");
         println!("Upload task completed");
     });
     String::from("Upload done.")
