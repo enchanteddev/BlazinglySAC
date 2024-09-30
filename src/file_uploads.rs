@@ -16,6 +16,19 @@ struct ViewRequest {
     hash: String,
 }
 
+#[derive(Debug)]
+enum FileHandleError {
+    InvalidImage,
+    FailedToWriteAsWebP,
+    SQLError(sqlx::Error),
+}
+
+enum AttachmentId {
+    Announcement(i32),
+    Thread(i32),
+    Event(i32),
+}
+
 pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload/", post(upload_file))
@@ -23,28 +36,39 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
-async fn handle_upload(connection: &Pool<Postgres>, name: String, data: Bytes) {
+async fn handle_upload(
+    connection: &Pool<Postgres>,
+    name: String,
+    data: Bytes,
+) -> Result<i32, FileHandleError> {
     let extension = name.split('.').last().unwrap_or("file"); // no file extension was given
     let original_hash = blake3::hash(&data).to_string();
 
-    let does_image_exist =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM upload WHERE original_hash = $1")
-            .bind(original_hash.clone())
-            .fetch_one(connection)
-            .await
-            .unwrap();
-
-    if does_image_exist > 0 {
-        return;
-    }
+    match sqlx::query_scalar!(
+        "SELECT id FROM upload WHERE original_hash = $1",
+        original_hash
+    )
+    .fetch_one(connection)
+    .await
+    {
+        Ok(image_id) => return Ok(image_id),
+        Err(err) => {
+            println!("Error: {err}")
+        }
+    };
 
     let (compressed_hash, compressed_data, file_type) =
         if extension == "png" || extension == "jpg" || extension == "jpeg" {
-            let image = image::load_from_memory(&data).unwrap();
+            let Ok(image) = image::load_from_memory(&data) else {
+                return Err(FileHandleError::InvalidImage);
+            };
+
             let mut new_data = Cursor::new(Vec::<u8>::new());
+
             image
                 .write_to(&mut new_data, image::ImageFormat::WebP)
-                .unwrap();
+                .map_err(|_| FileHandleError::FailedToWriteAsWebP)?;
+
             let compressed = new_data.into_inner();
 
             (blake3::hash(&compressed).to_string(), compressed, "webp")
@@ -52,17 +76,83 @@ async fn handle_upload(connection: &Pool<Postgres>, name: String, data: Bytes) {
             (original_hash.clone(), data.to_vec(), extension)
         };
 
-    sqlx::query("INSERT INTO upload (file_type, blob, original_hash, compressed_hash) VALUES ($1, $2, $3, $4)")
-        .bind(file_type)
-        .bind(compressed_data)
-        .bind(original_hash)
-        .bind(compressed_hash)
-        .execute(connection)
-        .await
-        .unwrap();
+    match sqlx::query_scalar!(
+        "SELECT id FROM upload WHERE compressed_hash = $1",
+        compressed_hash.clone()
+    )
+    .fetch_one(connection)
+    .await
+    {
+        Ok(image_id) => return Ok(image_id),
+        Err(_) => {}
+    };
+
+    let image_id = match sqlx::query_scalar!(
+        "INSERT INTO upload (file_type, blob, original_hash, compressed_hash) 
+            VALUES ($1, $2, $3, $4) RETURNING id",
+        file_type,
+        compressed_data,
+        original_hash,
+        compressed_hash
+    )
+    .fetch_one(connection)
+    .await
+    {
+        Ok(image_id) => image_id,
+        Err(e) => return Err(FileHandleError::SQLError(e)),
+    };
+
+    Ok(image_id)
+}
+
+async fn bind_attachment(
+    attachment_id: AttachmentId,
+    media_id: i32,
+    connection: &Pool<Postgres>,
+) -> Result<(), sqlx::Error> {
+    match attachment_id {
+        AttachmentId::Announcement(aid) => {
+            match sqlx::query(
+                "INSERT INTO announcement_media (announcement_id, media_id) VALUES ($1, $2)",
+            )
+            .bind(aid)
+            .bind(media_id)
+            .execute(connection)
+            .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+        AttachmentId::Thread(tid) => {
+            match sqlx::query("INSERT INTO thread_media (thread_id, media_id) VALUES ($1, $2)")
+                .bind(tid)
+                .bind(media_id)
+                .execute(connection)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+        AttachmentId::Event(eid) => {
+            match sqlx::query("INSERT INTO event_media (event_id, media_id) VALUES ($1, $2)")
+                .bind(eid)
+                .bind(media_id)
+                .execute(connection)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+    }
 }
 
 async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) -> String {
+    let mut attachment_id: Option<AttachmentId> = None;
+    let mut file_name: Option<String> = None;
+    let mut file_data: Option<Bytes> = None;
     while let Some(field) = match multipart.next_field().await {
         Ok(field) => field,
         Err(err) => return format!("Failed to get field: {}", err),
@@ -70,22 +160,78 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
         let Some(name) = field.name() else {
             continue;
         };
+        let name = name.to_string();
         if name == "file" {
-            let Some(file_name) = field.file_name() else {
-                return String::from("File name not found in headers");
+            let fname = match field.file_name() {
+                Some(fname) => {
+                    file_name = Some(fname.to_string());
+                    fname.to_string()
+                }
+                None => {
+                    return String::from("File name not found in headers");
+                }
             };
-            let file_name = file_name.to_string();
-            let Ok(data) = field.bytes().await else {
-                return String::from("Failed to get data");
+            // let file_name = file_name.to_string();
+            let datalen = match field.bytes().await {
+                Ok(data) => {
+                    let length = data.len();
+                    file_data = Some(data);
+                    length
+                }
+                Err(_) => {
+                    return String::from("Failed to get data");
+                }
             };
-            println!("Length of `{}` is {} bytes", file_name, data.len());
-            tokio::spawn(async move {
-                handle_upload(&state.connection, file_name, data).await;
-                println!("Upload task completed");
-            });
-            break;
+            println!("Length of `{}` is {} bytes", fname, datalen);
+        } else if name == "announcement_id" || name == "thread_id" || name == "event_id" {
+            match field.text().await {
+                Ok(att_id) => {
+                    let Ok(aid) = att_id.parse::<i32>() else {
+                        return format!("Failed to parse '{name}' as a number");
+                    };
+                    match name.as_str() {
+                        "announcement_id" => attachment_id = Some(AttachmentId::Announcement(aid)),
+                        "thread_id" => attachment_id = Some(AttachmentId::Thread(aid)),
+                        "event_id" => attachment_id = Some(AttachmentId::Event(aid)),
+                        _ => {
+                            unreachable!()
+                        }
+                    }
+                }
+                Err(_) => {
+                    return format!("Failed to get '{}'", name.clone());
+                }
+            };
         }
     }
+
+    let Some(fname) = file_name else {
+        return String::from("File name not found");
+    };
+    let Some(data) = file_data else {
+        return String::from("File data not found");
+    };
+    let Some(att_id) = attachment_id else {
+        return String::from("Attachment ID not found");
+    };
+    tokio::spawn(async move {
+        let media_id = match handle_upload(&state.connection, fname, data).await {
+            Ok(media_id) => media_id,
+            Err(e) => {
+                println!("Upload task failed with error: {e:?}");
+                return;
+            }
+        };
+        println!("Compression task completed");
+        match bind_attachment(att_id, media_id, &state.connection).await {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Binding task failed with error: {e:?}");
+                return;
+            }
+        }
+        println!("Upload task completed");
+    });
     String::from("Upload done.")
 }
 
@@ -93,7 +239,6 @@ async fn view_file(
     Query(query): Query<ViewRequest>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    println!("what");
     let Ok((file_bytes, file_type)) = sqlx::query_scalar::<_, (Vec<u8>, String)>(
         "SELECT (blob, file_type) FROM upload WHERE compressed_hash = $1",
     )
