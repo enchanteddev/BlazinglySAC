@@ -1,49 +1,63 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{
-    prelude::FromRow,
-    types::time::PrimitiveDateTime,
-};
+use sqlx::{prelude::FromRow, types::time::PrimitiveDateTime};
 
 use crate::{auth::Claims, models::AppState};
 
+pub fn routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/threads", get(threads))
+        .route("/threads/like/", post(like_thread))
+        .route("/threads/new/", post(create_thread))
+        .route("/comments", get(comments))
+        .route("/comments/like/", post(like_comment))
+        .route("/comments/new/", post(create_comment))
+        .with_state(state)
+}
+
 #[derive(Deserialize)]
-pub struct CommentRequest {
-    pub thread_id: i32,
+struct CommentRequest {
+    thread_id: i32,
 }
 
 #[derive(FromRow, Deserialize)]
-pub struct NewThreadRequest {
-    pub title: String,
-    pub content: String,
-    pub club_id: i32,
+struct NewThreadRequest {
+    title: String,
+    content: String,
+    club_id: i32,
 }
 
 #[derive(FromRow, Deserialize)]
-pub struct NewCommentRequest {
-    pub content: String,
-    pub thread_id: i32,
+struct NewCommentRequest {
+    content: String,
+    thread_id: i32,
 }
 
 #[derive(FromRow, Serialize)]
-pub struct Thread {
-    pub id: i32,
-    pub title: String,
-    pub content: String,
+struct Thread {
+    id: i32,
+    title: String,
+    content: String,
     #[serde(serialize_with = "pdt_to_unixtime")]
-    pub created_at: PrimitiveDateTime,
-    pub club_id: i32,
-    pub likes: i32,
+    created_at: PrimitiveDateTime,
+    club_id: i32,
+    likes: i32,
 }
 #[derive(FromRow, Serialize)]
-pub struct Comment {
-    pub id: i32,
-    pub content: String,
-    pub user_name: String,
-    pub likes: i32,
+struct Comment {
+    id: i32,
+    content: String,
+    user_name: String,
+    likes: i32,
     #[serde(serialize_with = "pdt_to_unixtime")]
-    pub created_at: PrimitiveDateTime,
+    created_at: PrimitiveDateTime,
 }
 
 fn pdt_to_unixtime<S>(ndt: &PrimitiveDateTime, s: S) -> Result<S::Ok, S::Error>
@@ -54,8 +68,8 @@ where
 }
 
 #[derive(FromRow, Deserialize)]
-pub struct LikeRequest {
-    pub id: i32,
+struct LikeRequest {
+    id: i32,
 }
 
 pub enum StatusResponse {
@@ -94,7 +108,7 @@ impl IntoResponse for StatusResponse {
     }
 }
 
-pub async fn threads(State(state): State<AppState>) -> Json<Vec<Thread>> {
+async fn threads(State(state): State<AppState>) -> Json<Vec<Thread>> {
     Json(
         sqlx::query_as!(
             Thread,
@@ -106,7 +120,7 @@ pub async fn threads(State(state): State<AppState>) -> Json<Vec<Thread>> {
     )
 }
 
-pub async fn comments(
+async fn comments(
     State(state): State<AppState>,
     comment_request: Json<CommentRequest>,
 ) -> Json<Vec<Comment>> {
@@ -124,7 +138,7 @@ pub async fn comments(
     )
 }
 
-pub async fn create_thread(
+async fn create_thread(
     claim: Claims,
     State(state): State<AppState>,
     thread_data: Json<NewThreadRequest>,
@@ -133,8 +147,9 @@ pub async fn create_thread(
     let user_id = claim.id;
     let club_id = thread_data.club_id;
     let Ok(privilege_level) = sqlx::query_scalar!(
+        // For some reason the `!` is needed here to force non-nullablity
         "
-            SELECT privilege_level FROM membership
+            SELECT privilege_level AS \"privilege_level!\" FROM membership
             WHERE user_id = $1 AND club_id = $2
             LIMIT 1
         ",
@@ -167,7 +182,7 @@ pub async fn create_thread(
     }
 }
 
-pub async fn create_comment(
+async fn create_comment(
     claim: Claims,
     State(state): State<AppState>,
     comment_request: Json<NewCommentRequest>,
@@ -190,7 +205,7 @@ pub async fn create_comment(
     }
 }
 
-pub async fn like_thread(
+async fn like_thread(
     claim: Claims,
     State(state): State<AppState>,
     thread_id: Json<LikeRequest>,
@@ -231,7 +246,7 @@ pub async fn like_thread(
     completion_status
 }
 
-pub async fn like_comment(
+async fn like_comment(
     claim: Claims,
     State(state): State<AppState>,
     comment_id: Json<LikeRequest>,

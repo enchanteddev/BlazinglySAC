@@ -3,7 +3,8 @@ use axum::{
     extract::{FromRequestParts, State},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
-    Json, RequestPartsExt,
+    routing::{get, post},
+    Json, RequestPartsExt, Router,
 };
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
@@ -25,6 +26,15 @@ use crate::models::AppState;
 // });
 
 // encoding/decoding keys - set in the static `once_cell` above
+
+pub fn routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/private", get(private))
+        .route("/login/", post(login))
+        .route("/register/", post(register))
+        .with_state(state)
+}
+
 struct Keys {
     encoding: EncodingKey,
     decoding: DecodingKey,
@@ -40,37 +50,37 @@ impl Keys {
 }
 
 #[derive(FromRow, Serialize)]
-pub struct UserProfile {
-    pub id: i32,
-    pub name: String,
-    pub email: String,
-    pub password_hash: String,
+struct UserProfile {
+    id: i32,
+    name: String,
+    email: String,
+    password_hash: String,
 }
 
 // the JWT claim
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub id: i32,
-    name: String,
+    pub name: String,
     pub email: String,
-    exp: usize,
+    pub exp: usize,
 }
 
 // the response that we pass back to HTTP client once successfully authorised
 #[derive(Debug, Serialize)]
-pub struct AuthBody {
+struct AuthBody {
     access_token: String,
     token_type: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct AuthPayload {
+struct AuthPayload {
     email: String,
     password: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RegisterAuthPayload {
+struct RegisterAuthPayload {
     name: String,
     email: String,
     password: String,
@@ -145,13 +155,13 @@ static KEYS: LazyLock<Keys> = LazyLock::new(|| {
     Keys::new(secret.as_bytes())
 });
 
-pub async fn private(claims: Claims) -> Result<String, AuthError> {
+async fn private(claims: Claims) -> Result<String, AuthError> {
     Ok(format!(
         "Welcome to the protected area :)\nYour data:\n{claims:?}",
     ))
 }
 
-pub async fn login(
+async fn login(
     State(state): State<AppState>,
     Json(payload): Json<AuthPayload>,
 ) -> Result<Json<AuthBody>, AuthError> {
@@ -199,7 +209,7 @@ pub async fn login(
     Ok(Json(AuthBody::new(token)))
 }
 
-pub async fn register(
+async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterAuthPayload>,
 ) -> Result<Json<AuthBody>, AuthError> {
