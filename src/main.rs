@@ -63,7 +63,6 @@ async fn main() {
     };
     let app = Router::new()
         .route("/home/announcements", get(views::announcements))
-        .route("/home/councils", get(views::councils))
         .route("/conversation/threads", get(thread_comment::threads)) 
         .route("/conversation/threads/like/", post(thread_comment::like_thread)) 
         .route("/conversation/threads/new/", post(thread_comment::create_thread))
