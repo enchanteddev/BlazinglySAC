@@ -15,6 +15,8 @@ mod models;
 mod views;
 mod thread_comment;
 mod auth;
+mod club;
+mod council;
 mod file_uploads;
 
 #[tokio::main]
@@ -71,6 +73,8 @@ async fn main() {
         .route("/auth/login/", post(auth::login))
         .route("/auth/register/", post(auth::register))
         .route("/auth/private", get(auth::private))
+        .nest("/club", club::routes(state.clone()))
+        .nest("/council", council::routes(state.clone()))
         .nest("/media", file_uploads::routes(state.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
