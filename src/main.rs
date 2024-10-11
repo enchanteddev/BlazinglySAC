@@ -57,8 +57,12 @@ async fn main() {
     };
 
     let state = models::AppState {
-        connection: models::get_connection().await,
-        env_vars,
+        connection: models::get_connection(
+            env_vars
+                .get("DATABASE_URL")
+                .expect("No env variable set for 'DATABASE_URL'"),
+        )
+        .await,
     };
     let app = Router::new()
         .route("/home/announcements", get(views::announcements))

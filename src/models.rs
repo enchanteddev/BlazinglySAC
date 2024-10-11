@@ -1,19 +1,14 @@
-use std::collections::HashMap;
-
 use sqlx::{migrate::MigrateDatabase, postgres::PgPoolOptions, Pool, Postgres};
-
-const DB_URL: &str = "postgresql://krawat:pwd@localhost:5432/blazinglysac";
 
 #[derive(Clone)]
 pub struct AppState {
-    pub connection: Pool<Postgres>,
-    pub env_vars: HashMap<String, String>,
+    pub connection: Pool<Postgres>
 }
 
-pub async fn get_connection() -> Pool<Postgres> {
-    if !Postgres::database_exists(DB_URL).await.unwrap_or(false) {
-        println!("Creating database {}", DB_URL);
-        match Postgres::create_database(DB_URL).await {
+pub async fn get_connection(db_url: &str) -> Pool<Postgres> {
+    if !Postgres::database_exists(db_url).await.unwrap_or(false) {
+        println!("Creating database {}", db_url);
+        match Postgres::create_database(db_url).await {
             Ok(_) => println!("Created new db successfully"),
             Err(error) => panic!("Failed to create Database. Error: {}", error),
         }
@@ -23,7 +18,7 @@ pub async fn get_connection() -> Pool<Postgres> {
 
     let db = PgPoolOptions::new()
         .max_connections(10)
-        .connect(DB_URL)
+        .connect(db_url)
         .await
         .unwrap();
 
