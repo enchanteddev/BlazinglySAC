@@ -16,6 +16,7 @@ mod models;
 mod thread_comment;
 mod views;
 mod validation;
+mod transportation;
 
 #[tokio::main]
 async fn main() {

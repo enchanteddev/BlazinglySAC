@@ -5,9 +5,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{prelude::FromRow, types::time::PrimitiveDateTime};
+use sqlx::{prelude::FromRow, types::chrono::DateTime};
 
 use crate::{auth::Claims, models::AppState};
 
@@ -45,8 +46,7 @@ struct Thread {
     id: i32,
     title: String,
     content: String,
-    #[serde(serialize_with = "pdt_to_unixtime")]
-    created_at: PrimitiveDateTime,
+    created_at: DateTime<Utc>,
     club_id: i32,
     likes: i32,
 }
@@ -56,15 +56,7 @@ struct Comment {
     content: String,
     user_name: String,
     likes: i32,
-    #[serde(serialize_with = "pdt_to_unixtime")]
-    created_at: PrimitiveDateTime,
-}
-
-fn pdt_to_unixtime<S>(ndt: &PrimitiveDateTime, s: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    s.serialize_i64(ndt.assume_utc().unix_timestamp())
+    created_at: DateTime<Utc>,
 }
 
 #[derive(FromRow, Deserialize)]

@@ -20,6 +20,7 @@ struct ViewRequest {
 enum FileHandleError {
     InvalidImage,
     FailedToWriteAsWebP,
+    #[allow(dead_code)]
     SQLError(sqlx::Error),
 }
 
