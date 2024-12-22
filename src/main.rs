@@ -67,6 +67,7 @@ async fn main() {
         .await,
     };
     let app = Router::new()
+        .route("/", get(index))
         .route("/home/announcements", get(views::announcements))
         .nest("/conversation/", thread_comment::routes(state.clone()))
         .nest("/auth/", auth::routes(state.clone()))
@@ -83,4 +84,9 @@ async fn main() {
     println!("listening on {}", base_url);
 
     axum::serve(listener, app).await.unwrap();
+}
+
+
+async fn index() -> String {
+    "The SAC Backend is up and running!".to_string()
 }
