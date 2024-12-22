@@ -220,7 +220,11 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
         return String::from("Attachment ID not found");
     };
     tokio::spawn(async move {
-        let mut txn = state.connection.begin().await.expect("Failed to start transaction");
+        let mut txn = state
+            .connection
+            .begin()
+            .await
+            .expect("Failed to start transaction");
         let media_id = match handle_upload(&mut *txn, fname, data).await {
             Ok(media_id) => media_id,
             Err(e) => {
@@ -267,3 +271,6 @@ async fn view_file(
 
     Ok((headers, file_bytes))
 }
+
+// TODO Add a route that takes in id of announcement thread etc, 
+// and redirects to the corresponding /view page of the uploaded file

@@ -14,7 +14,7 @@ mod council;
 mod file_uploads;
 mod models;
 mod thread_comment;
-mod views;
+mod announcements;
 mod validation;
 mod transportation;
 
@@ -68,7 +68,7 @@ async fn main() {
     };
     let app = Router::new()
         .route("/", get(index))
-        .route("/home/announcements", get(views::announcements))
+        .nest("/announcement", announcements::routes(state.clone()))
         .nest("/conversation/", thread_comment::routes(state.clone()))
         .nest("/auth/", auth::routes(state.clone()))
         .nest("/club", club::routes(state.clone()))
