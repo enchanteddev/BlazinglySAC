@@ -3,7 +3,7 @@ use std::io::Cursor;
 use axum::body::Bytes;
 use axum::extract::{Multipart, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Redirect};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
@@ -24,6 +24,19 @@ enum FileHandleError {
     SQLError(sqlx::Error),
 }
 
+#[derive(Deserialize)]
+struct AttachmentRequest {
+    id: i32,
+    attachment_type: AttachmentType
+}
+
+#[derive(Deserialize)]
+enum AttachmentType {
+    Announcement,
+    Thread,
+    Event,
+}
+
 enum AttachmentId {
     Announcement(i32),
     Thread(i32),
@@ -34,6 +47,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload/", post(upload_file))
         .route("/view", get(view_file))
+        .route("/attachment", get(view_attachment_from_id))
         .with_state(state)
 }
 
@@ -272,5 +286,53 @@ async fn view_file(
     Ok((headers, file_bytes))
 }
 
-// TODO Add a route that takes in id of announcement thread etc, 
-// and redirects to the corresponding /view page of the uploaded file
+async fn view_attachment_from_id(
+    State(state): State<AppState>,
+    Query(attachment_id): Query<AttachmentRequest>,
+) -> Redirect {
+    let attachment_id = match attachment_id .attachment_type{
+        AttachmentType::Announcement => AttachmentId::Announcement(attachment_id.id),
+        AttachmentType::Thread => AttachmentId::Thread(attachment_id.id),
+        AttachmentType::Event => AttachmentId::Event(attachment_id.id),
+    };
+    let hash = match attachment_id {
+        AttachmentId::Announcement(aid) => sqlx::query_scalar!(
+            "
+                SELECT upload.compressed_hash FROM announcement_media
+                INNER JOIN upload ON upload.id = announcement_media.media_id 
+                WHERE announcement_id = $1
+                ",
+            aid
+        )
+        .fetch_one(&state.connection)
+        .await
+        .ok(),
+        AttachmentId::Event(eid) => sqlx::query_scalar!(
+            "
+                SELECT upload.compressed_hash FROM event_media
+                INNER JOIN upload ON upload.id = event_media.media_id 
+                WHERE event_id = $1
+                ",
+            eid
+        )
+        .fetch_one(&state.connection)
+        .await
+        .ok(),
+        AttachmentId::Thread(tid) => sqlx::query_scalar!(
+            "
+                SELECT upload.compressed_hash FROM thread_media
+                INNER JOIN upload ON upload.id = thread_media.media_id 
+                WHERE thread_id = $1
+                ",
+            tid
+        )
+        .fetch_one(&state.connection)
+        .await
+        .ok(),
+    };
+
+    match hash {
+        Some(hash) => Redirect::to(&format!("/media/view?hash={hash}")),
+        None => Redirect::to("/404"),
+    }
+}
