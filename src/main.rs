@@ -17,6 +17,7 @@ mod thread_comment;
 mod announcements;
 mod validation;
 mod transportation;
+mod events;
 
 #[tokio::main]
 async fn main() {
@@ -69,6 +70,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .nest("/announcement", announcements::routes(state.clone()))
+        .nest("/event", events::routes(state.clone()))
         .nest("/conversation", thread_comment::routes(state.clone()))
         .nest("/auth", auth::routes(state.clone()))
         .nest("/club", club::routes(state.clone()))
