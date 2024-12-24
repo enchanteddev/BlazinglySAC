@@ -19,6 +19,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
 
 #[derive(Serialize)]
 struct ClubBasic {
+    id: i32,
     name: String,
     description: String,
     council_name: String,
@@ -52,7 +53,7 @@ async fn list_clubs(State(state): State<AppState>) -> Json<Vec<ClubBasic>> {
     Json(
         sqlx::query_as!(
             ClubBasic,
-            "SELECT club.name, description, council.name as council_name FROM club INNER JOIN council ON club.council_id = council.id",
+            "SELECT club.id, club.name, description, council.name as council_name FROM club INNER JOIN council ON club.council_id = council.id",
         )
         .fetch_all(&state.connection)
         .await

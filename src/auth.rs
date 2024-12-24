@@ -29,7 +29,7 @@ use crate::models::AppState;
 
 pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/private", get(private))
+        .route("/whoami", get(whoami))
         .route("/login/", post(login))
         .route("/register/", post(register))
         .with_state(state)
@@ -64,6 +64,13 @@ pub struct Claims {
     pub name: String,
     pub email: String,
     pub exp: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Profile {
+    pub id: i32,
+    pub name: String,
+    pub email: String,
 }
 
 // the response that we pass back to HTTP client once successfully authorised
@@ -151,14 +158,16 @@ impl IntoResponse for AuthError {
 }
 
 static KEYS: LazyLock<Keys> = LazyLock::new(|| {
-    let secret = "JWT_SECRET".to_string();
+    let secret = "JWT_SECRET".to_string(); // TODO CHANGE KEY BEFORE LAUNCH!
     Keys::new(secret.as_bytes())
 });
 
-async fn private(claims: Claims) -> Result<String, AuthError> {
-    Ok(format!(
-        "Welcome to the protected area :)\nYour data:\n{claims:?}",
-    ))
+async fn whoami(claims: Claims) -> Result<Json<Profile>, AuthError> {
+    Ok(Json(Profile {
+        id: claims.id,
+        name: claims.name,
+        email: claims.email,
+    }))
 }
 
 async fn login(

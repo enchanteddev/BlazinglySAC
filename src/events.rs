@@ -38,7 +38,7 @@ struct EventRequest {
 async fn events(State(state): State<AppState>) -> Json<Vec<Event>> {
     Json(
         sqlx::query_as::<_, Event>(
-            "SELECT (club.name, title, description, starts_at, venue) FROM event INNER JOIN club ON club.id = event.club_id",
+            "SELECT club.name, title, event.description, starts_at, venue FROM event INNER JOIN club ON club.id = event.club_id",
         )
         .fetch_all(&state.connection)
         .await
