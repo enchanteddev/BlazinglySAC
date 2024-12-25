@@ -67,6 +67,7 @@ struct LikeRequest {
 pub enum StatusResponse {
     Success,
     ServerError,
+    SuccessWithData(String),
     UserError(String),
 }
 
@@ -93,6 +94,14 @@ impl IntoResponse for StatusResponse {
                 Json(json!({
                     "success": false,
                     "error": err,
+                })),
+            )
+                .into_response(),
+            StatusResponse::SuccessWithData(data) => (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "data": data,
                 })),
             )
                 .into_response(),
