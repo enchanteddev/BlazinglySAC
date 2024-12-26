@@ -1,8 +1,9 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,6 +15,9 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route("/list", get(list_clubs))
         .route("/create", post(create_club))
         .route("/update", post(update_club))
+        .route("/join", post(join_club))
+        .route("/view_applications", get(view_club_application))
+        .route("/accept_application", post(accept_club_join_application))
         .with_state(state)
 }
 
@@ -39,6 +43,33 @@ struct ClubFull {
 struct ClubUpdateRequest {
     name: String,
     update: ClubUpdate,
+}
+
+#[derive(Deserialize)]
+struct ClubJoinApplicationRequest {
+    club_id: i32,
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ClubViewApplicationRequest {
+    club_id: i32,
+}
+
+#[derive(Deserialize)]
+struct ClubAcceptApplicationRequest {
+    application_id: i32,
+}
+
+#[derive(Serialize)]
+struct ClubApplicationRequest {
+    id: i32,
+    user_name: String,
+    user_email: String,
+    message: Option<String>,
+    created_at: DateTime<Utc>,
+    accepted: bool,
+    accepted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -153,5 +184,121 @@ async fn update_club(
     match update_response {
         Ok(_) => StatusResponse::Success,
         Err(err) => StatusResponse::UserError(err),
+    }
+}
+
+async fn join_club(
+    claims: Claims,
+    State(state): State<AppState>,
+    Json(club_join_request): Json<ClubJoinApplicationRequest>,
+) -> StatusResponse {
+    let user_id = claims.id;
+    let Ok(membership) = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM membership WHERE user_id = $1 AND club_id = $2",
+        user_id,
+        club_join_request.club_id
+    )
+    .fetch_one(&state.connection)
+    .await
+    else {
+        return StatusResponse::ServerError;
+    };
+
+    let is_member = membership.unwrap_or(0) > 0;
+    if is_member {
+        return StatusResponse::UserError("You are already a member of this club".to_string());
+    }
+
+    match sqlx::query!(
+        "INSERT INTO club_application (club_id, user_id, message) VALUES ($1, $2, $3)",
+        club_join_request.club_id,
+        user_id,
+        club_join_request.message
+    )
+    .execute(&state.connection)
+    .await
+    {
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
+    }
+}
+
+async fn view_club_application(
+    claims: Claims,
+    State(state): State<AppState>,
+    Query(club_view_application_request): Query<ClubViewApplicationRequest>,
+) -> Result<Json<Vec<ClubApplicationRequest>>, StatusResponse> {
+    let user_email = claims.email;
+    let club_id = club_view_application_request.club_id;
+    let club_head_emails =
+        sqlx::query_scalar!("SELECT club_head_emails FROM club WHERE id = $1", club_id)
+            .fetch_one(&state.connection)
+            .await
+            .unwrap();
+
+    if !club_head_emails.contains(&user_email) {
+        return Err(StatusResponse::UserError(
+            "You are not a club head".to_string(),
+        ));
+    }
+
+    let applications = sqlx::query_as!(
+        ClubApplicationRequest,
+        "SELECT 
+            club_application.id as \"id\", user_profile.name as \"user_name\", user_profile.email as \"user_email\", 
+            message, created_at, accepted, accepted_at
+        FROM club_application 
+        INNER JOIN user_profile ON user_profile.id = club_application.user_id
+        WHERE club_id = $1",
+        club_id
+    )
+    .fetch_all(&state.connection)
+    .await
+    .unwrap();
+
+    Ok(Json(applications))
+}
+
+async fn accept_club_join_application(
+    claims: Claims,
+    State(state): State<AppState>,
+    Json(club_accept_application_request): Json<ClubAcceptApplicationRequest>,
+) -> StatusResponse {
+    let user_email = claims.email;
+    let application_id = club_accept_application_request.application_id;
+    let Ok(club_id) = sqlx::query_scalar!(
+        "SELECT club_id FROM club_application WHERE id = $1",
+        application_id
+    )
+    .fetch_one(&state.connection)
+    .await
+    else {
+        return StatusResponse::ServerError;
+    };
+
+    let Ok(club_head_emails) =
+        sqlx::query_scalar!("SELECT club_head_emails FROM club WHERE id = $1", club_id)
+            .fetch_one(&state.connection)
+            .await
+    else {
+        return StatusResponse::ServerError;
+    };
+
+    if !club_head_emails.contains(&user_email) {
+        return StatusResponse::UserError("You are not a club head".to_string());
+    }
+
+    match sqlx::query!(
+        "UPDATE club_application SET 
+            accepted = TRUE,
+            accepted_at = (now() at time zone 'utc')
+        WHERE id = $1",
+        application_id
+    )
+    .execute(&state.connection)
+    .await
+    {
+        Ok(_) => StatusResponse::Success,
+        Err(err) => StatusResponse::UserError(err.to_string()),
     }
 }
