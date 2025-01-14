@@ -39,7 +39,7 @@ struct EventRequest {
 async fn events(State(state): State<AppState>) -> Json<Vec<Event>> {
     Json(
         sqlx::query_as::<_, Event>(
-            "SELECT event.id, club.name, title, event.description, starts_at, venue FROM event INNER JOIN club ON club.id = event.club_id",
+            "SELECT event.id, club.name as club_name, title, event.description, starts_at, venue FROM event INNER JOIN club ON club.id = event.club_id ORDER BY event.id DESC",
         )
         .fetch_all(&state.connection)
         .await
@@ -76,10 +76,11 @@ async fn create_event(
         );
     }
 
-    match sqlx::query!(
-        "INSERT INTO event (title, description, club_id, starts_at, venue) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    match sqlx::query_scalar!(
+        "INSERT INTO event (title, description, user_id, club_id, starts_at, venue) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         &request.title,
         &request.description,
+        user_id,
         club_id,
         &request.starts_at,
         &request.venue,
@@ -87,7 +88,7 @@ async fn create_event(
     .fetch_one(&state.connection)
     .await
     {
-        Ok(_) => StatusResponse::Success,
+        Ok(id) => StatusResponse::SuccessWithData(id.to_string()),
         Err(err) => StatusResponse::UserError(err.to_string()),
     }
 }
