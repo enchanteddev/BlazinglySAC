@@ -35,12 +35,14 @@ enum AttachmentType {
     Announcement,
     Thread,
     Event,
+    Club,
 }
 
 enum AttachmentId {
     Announcement(i32),
     Thread(i32),
     Event(i32),
+    Club(i32),
 }
 
 pub fn routes(state: AppState) -> Router<AppState> {
@@ -165,6 +167,19 @@ async fn bind_attachment(
                 Err(e) => Err(e),
             }
         }
+        AttachmentId::Club(cid) => {
+            match sqlx::query!(
+                "UPDATE club SET logo_id = $2 WHERE id = $1",
+                cid,
+                media_id
+            )
+            .execute(connection)
+            .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
     }
 }
 
@@ -202,7 +217,7 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
                 }
             };
             println!("Length of `{}` is {} bytes", fname, datalen);
-        } else if name == "announcement_id" || name == "thread_id" || name == "event_id" {
+        } else if name == "announcement_id" || name == "thread_id" || name == "event_id" || name == "club_id" {
             match field.text().await {
                 Ok(att_id) => {
                     let Ok(aid) = att_id.parse::<i32>() else {
@@ -212,6 +227,7 @@ async fn upload_file(State(state): State<AppState>, mut multipart: Multipart) ->
                         "announcement_id" => attachment_id = Some(AttachmentId::Announcement(aid)),
                         "thread_id" => attachment_id = Some(AttachmentId::Thread(aid)),
                         "event_id" => attachment_id = Some(AttachmentId::Event(aid)),
+                        "club_id" => attachment_id = Some(AttachmentId::Club(aid)),
                         _ => {
                             unreachable!()
                         }
@@ -290,10 +306,11 @@ async fn view_attachment_from_id(
     State(state): State<AppState>,
     Query(attachment_id): Query<AttachmentRequest>,
 ) -> Redirect {
-    let attachment_id = match attachment_id .attachment_type{
+    let attachment_id = match attachment_id.attachment_type {
         AttachmentType::Announcement => AttachmentId::Announcement(attachment_id.id),
         AttachmentType::Thread => AttachmentId::Thread(attachment_id.id),
         AttachmentType::Event => AttachmentId::Event(attachment_id.id),
+        AttachmentType::Club => AttachmentId::Club(attachment_id.id),
     };
     let hash = match attachment_id {
         AttachmentId::Announcement(aid) => sqlx::query_scalar!(
@@ -325,6 +342,17 @@ async fn view_attachment_from_id(
                 WHERE thread_id = $1
                 ",
             tid
+        )
+        .fetch_one(&state.connection)
+        .await
+        .ok(),
+        AttachmentId::Club(cid) => sqlx::query_scalar!(
+            "
+                SELECT upload.compressed_hash FROM club
+                INNER JOIN upload ON upload.id = club.logo_id 
+                WHERE club.id = $1
+                ",
+            cid
         )
         .fetch_one(&state.connection)
         .await

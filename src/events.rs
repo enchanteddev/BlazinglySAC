@@ -21,6 +21,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
 struct Event {
     pub id: i32,
     pub club_name: String,
+    pub club_id: i32,
     pub title: String,
     pub description: String,
     pub starts_at: DateTime<Utc>,
@@ -39,7 +40,7 @@ struct EventRequest {
 async fn events(State(state): State<AppState>) -> Json<Vec<Event>> {
     Json(
         sqlx::query_as::<_, Event>(
-            "SELECT event.id, club.name as club_name, title, event.description, starts_at, venue FROM event INNER JOIN club ON club.id = event.club_id ORDER BY event.id DESC",
+            "SELECT event.id, club.name as club_name, club.id as club_id, title, event.description, starts_at, venue FROM event INNER JOIN club ON club.id = event.club_id ORDER BY event.id DESC",
         )
         .fetch_all(&state.connection)
         .await
