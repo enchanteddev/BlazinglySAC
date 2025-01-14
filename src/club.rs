@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use ::futures::future::join_all;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,6 +20,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route("/join", post(join_club))
         .route("/view_applications", get(view_club_application))
         .route("/accept_application", post(accept_club_join_application))
+        .route("/get_full", get(get_club_full))
         .with_state(state)
 }
 
@@ -30,14 +32,15 @@ struct ClubBasic {
     council_name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ClubFull {
+    id: i32,
     name: String,
     email: String,
     description: String,
     council_name: String,
     club_head_emails: Vec<String>,
-    phone: String,
+    phones: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,8 +80,23 @@ struct ClubApplicationRequest {
 enum ClubUpdate {
     UpdateHeads(Vec<String>),
     UpdateDescription(String),
-    UpdatePhone(String),
+    UpdatePhones(Vec<String>),
     UpdateEmail(String),
+}
+
+#[derive(Serialize)]
+struct ClubHead {
+    name: String,
+    email: String,
+    contact_number: String,
+}
+
+#[derive(Serialize)]
+struct ClubFullResponse {
+    name: String,
+    description: String,
+    heads: Vec<ClubHead>,
+    email: String,
 }
 
 async fn list_clubs(State(state): State<AppState>) -> Json<Vec<ClubBasic>> {
@@ -111,6 +129,56 @@ async fn list_my_clubs(claims: Claims, State(state): State<AppState>) -> Json<Ve
     )
 }
 
+
+async fn get_club_full(
+    Query(req): Query<ClubViewApplicationRequest>,
+    State(state): State<AppState>,
+) -> Json<ClubFullResponse> {
+    let club_id = req.club_id;
+    
+    let club_data = sqlx::query!(
+        "
+        SELECT club.name, club.email, club.description, club.club_head_emails, club.phones
+        FROM club 
+        WHERE club.id = $1
+        ",
+        club_id
+    )
+    .fetch_one(&state.connection)
+    .await
+    .unwrap();
+
+    // Get club head details from user_profile table and combine with phone numbers
+    let futures: Vec<_> = club_data.club_head_emails
+        .iter()
+        .zip(club_data.phones.iter())
+        .map( |(email, phone)| async {
+            let head = sqlx::query!(
+                "SELECT name, email FROM user_profile WHERE email = $1",
+                email.clone()
+            )
+            .fetch_one(&state.connection)
+            .await
+            .unwrap();
+
+            ClubHead {
+                name: head.name,
+                email: head.email,
+                contact_number: phone.to_string(),
+            }
+        })
+        .collect();
+
+    let heads = join_all(futures).await;
+
+    Json(ClubFullResponse {
+        name: club_data.name,
+        description: club_data.description,
+        heads,
+        email: club_data.email,
+    })
+}
+
 async fn create_club(
     claims: Claims,
     State(state): State<AppState>,
@@ -141,13 +209,13 @@ async fn create_club(
     };
 
     match sqlx::query!(
-        "INSERT INTO club (name, email, description, council_id, club_head_emails, phone) VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO club (name, email, description, council_id, club_head_emails, phones) VALUES ($1, $2, $3, $4, $5, $6)",
         &club_data.name,
         &club_data.email,
         &club_data.description,
         council_id,
         &club_data.club_head_emails,
-        &club_data.phone
+        &club_data.phones
     ).execute(&state.connection).await {
         Ok(_) => StatusResponse::Success,
         Err(err) => StatusResponse::UserError(err.to_string())
@@ -185,8 +253,8 @@ async fn update_club(
         .await
         .map_err(|e| e.to_string()),
 
-        ClubUpdate::UpdatePhone(phone) => {
-            sqlx::query!("UPDATE club SET phone = $1 WHERE name = $2", &phone, name)
+        ClubUpdate::UpdatePhones(phones) => {
+            sqlx::query!("UPDATE club SET phones = $1 WHERE name = $2", &phones, name)
                 .execute(&state.connection)
                 .await
                 .map_err(|e| e.to_string())
