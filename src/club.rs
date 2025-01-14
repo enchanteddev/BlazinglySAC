@@ -13,6 +13,7 @@ use crate::{
 pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/list", get(list_clubs))
+        .route("/list_my", get(list_my_clubs))
         .route("/create", post(create_club))
         .route("/update", post(update_club))
         .route("/join", post(join_club))
@@ -85,6 +86,24 @@ async fn list_clubs(State(state): State<AppState>) -> Json<Vec<ClubBasic>> {
         sqlx::query_as!(
             ClubBasic,
             "SELECT club.id, club.name, description, council.name as council_name FROM club INNER JOIN council ON club.council_id = council.id",
+        )
+        .fetch_all(&state.connection)
+        .await
+        .unwrap(),
+    )
+}
+
+async fn list_my_clubs(claims: Claims, State(state): State<AppState>) -> Json<Vec<ClubBasic>> {
+    let user_id = claims.id;
+    Json(
+        sqlx::query_as!(
+            ClubBasic,
+            "
+            SELECT club.id, club.name, description, council.name as council_name 
+            FROM club INNER JOIN council ON club.council_id = council.id
+            INNER JOIN membership on membership.club_id = club.id WHERE membership.user_id = $1;
+            ",
+            user_id
         )
         .fetch_all(&state.connection)
         .await

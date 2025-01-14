@@ -67,7 +67,9 @@ async fn create_event(
     .fetch_one(&state.connection)
     .await
     else {
-        return StatusResponse::ServerError;
+        return StatusResponse::UserError(
+            "You are not allowed to create announcements in this club".to_string(),
+        );
     };
 
     if privilege_level <= 1 {
