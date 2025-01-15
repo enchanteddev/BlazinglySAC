@@ -18,6 +18,7 @@ mod announcements;
 mod validation;
 mod transportation;
 mod events;
+mod grievance;
 
 #[tokio::main]
 async fn main() {
@@ -76,6 +77,7 @@ async fn main() {
         .nest("/club", club::routes(state.clone()))
         .nest("/council", council::routes(state.clone()))
         .nest("/media", file_uploads::routes(state.clone()))
+        .nest("/grievance", grievance::routes(state.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
         .with_state(state);
