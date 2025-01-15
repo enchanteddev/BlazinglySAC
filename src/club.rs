@@ -401,24 +401,26 @@ async fn accept_club_join_application(
         return StatusResponse::UserError("You are not a club head".to_string());
     }
 
-    match sqlx::query!(
+    let new_user_id = match sqlx::query_scalar!(
         "UPDATE club_application SET 
             accepted = TRUE,
             accepted_at = (now() at time zone 'utc')
-        WHERE id = $1",
+        WHERE id = $1
+        RETURNING user_id
+        ",
         application_id
     )
-    .execute(&state.connection)
+    .fetch_one(&state.connection)
     .await
     {
-        Ok(_) => {}
+        Ok(user_id) => user_id,
         Err(err) => return StatusResponse::UserError(err.to_string()),
     };
 
     match sqlx::query!(
-        "INSERT INTO membership (club_id, user_id) VALUES ($1, $2)",
+        "INSERT INTO membership (club_id, user_id, role, privilege_level) VALUES ($1, $2, 'member', 0)",
         club_id,
-        claims.id
+        new_user_id
     )
     .execute(&state.connection)
     .await
