@@ -45,7 +45,7 @@ struct AnnouncementRequest {
 async fn announcements(State(state): State<AppState>) -> Json<Vec<PublicAnnouncement>> {
     Json(
         sqlx::query_as::<_, PublicAnnouncement>(
-            "SELECT id, title, content, created_at FROM announcement",
+            "SELECT id, title, content, created_at FROM announcement ORDER BY created_at DESC LIMIT 5",
         )
         .fetch_all(&state.connection)
         .await

@@ -1,10 +1,10 @@
+use ::futures::future::join_all;
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
-use ::futures::future::join_all;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -15,6 +15,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/list", get(list_clubs))
         .route("/list_my", get(list_my_clubs))
+        .route("/list_my_applied", get(list_my_applied_clubs))
         .route("/create", post(create_club))
         .route("/update", post(update_club))
         .route("/join", post(join_club))
@@ -93,6 +94,7 @@ struct ClubHead {
 
 #[derive(Serialize)]
 struct ClubFullResponse {
+    id: i32,
     name: String,
     description: String,
     heads: Vec<ClubHead>,
@@ -104,6 +106,29 @@ async fn list_clubs(State(state): State<AppState>) -> Json<Vec<ClubBasic>> {
         sqlx::query_as!(
             ClubBasic,
             "SELECT club.id, club.name, description, council.name as council_name FROM club INNER JOIN council ON club.council_id = council.id",
+        )
+        .fetch_all(&state.connection)
+        .await
+        .unwrap(),
+    )
+}
+
+async fn list_my_applied_clubs(
+    claims: Claims,
+    State(state): State<AppState>,
+) -> Json<Vec<ClubBasic>> {
+    let user_id = claims.id;
+    Json(
+        sqlx::query_as!(
+            ClubBasic,
+            "
+            SELECT club.id, club.name, description, council.name as council_name 
+            FROM club 
+            INNER JOIN council ON club.council_id = council.id
+            INNER JOIN club_application ON club_application.club_id = club.id 
+            WHERE club_application.user_id = $1 AND club_application.accepted = false;
+            ",
+            user_id
         )
         .fetch_all(&state.connection)
         .await
@@ -129,16 +154,15 @@ async fn list_my_clubs(claims: Claims, State(state): State<AppState>) -> Json<Ve
     )
 }
 
-
 async fn get_club_full(
     Query(req): Query<ClubViewApplicationRequest>,
     State(state): State<AppState>,
 ) -> Json<ClubFullResponse> {
     let club_id = req.club_id;
-    
+
     let club_data = sqlx::query!(
         "
-        SELECT club.name, club.email, club.description, club.club_head_emails, club.phones
+        SELECT club.id, club.name, club.email, club.description, club.club_head_emails, club.phones
         FROM club 
         WHERE club.id = $1
         ",
@@ -149,10 +173,11 @@ async fn get_club_full(
     .unwrap();
 
     // Get club head details from user_profile table and combine with phone numbers
-    let futures: Vec<_> = club_data.club_head_emails
+    let futures: Vec<_> = club_data
+        .club_head_emails
         .iter()
         .zip(club_data.phones.iter())
-        .map( |(email, phone)| async {
+        .map(|(email, phone)| async {
             let head = sqlx::query!(
                 "SELECT name, email FROM user_profile WHERE email = $1",
                 email.clone()
@@ -172,6 +197,7 @@ async fn get_club_full(
     let heads = join_all(futures).await;
 
     Json(ClubFullResponse {
+        id: club_data.id,
         name: club_data.name,
         description: club_data.description,
         heads,
@@ -381,6 +407,18 @@ async fn accept_club_join_application(
             accepted_at = (now() at time zone 'utc')
         WHERE id = $1",
         application_id
+    )
+    .execute(&state.connection)
+    .await
+    {
+        Ok(_) => {}
+        Err(err) => return StatusResponse::UserError(err.to_string()),
+    };
+
+    match sqlx::query!(
+        "INSERT INTO membership (club_id, user_id) VALUES ($1, $2)",
+        club_id,
+        claims.id
     )
     .execute(&state.connection)
     .await
