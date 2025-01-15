@@ -234,17 +234,68 @@ async fn create_club(
         Err(err) => return StatusResponse::UserError(err),
     };
 
-    match sqlx::query!(
-        "INSERT INTO club (name, email, description, council_id, club_head_emails, phones) VALUES ($1, $2, $3, $4, $5, $6)",
+    // Start a transaction since we need to perform multiple operations
+    let mut tx = match state.connection.begin().await {
+        Ok(tx) => tx,
+        Err(err) => return StatusResponse::UserError(err.to_string()),
+    };
+
+    // Insert the club first
+    let club_id = match sqlx::query_scalar!(
+        "INSERT INTO club (name, email, description, council_id, club_head_emails, phones) 
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         &club_data.name,
         &club_data.email,
         &club_data.description,
         council_id,
         &club_data.club_head_emails,
         &club_data.phones
-    ).execute(&state.connection).await {
+    )
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(id) => id,
+        Err(err) => {
+            let _ = tx.rollback().await;
+            return StatusResponse::UserError(err.to_string());
+        }
+    };
+
+    // Get user IDs for all club heads
+    for head_email in &club_data.club_head_emails {
+        let user_id =
+            match sqlx::query_scalar!("SELECT id FROM user_profile WHERE email = $1", head_email)
+                .fetch_one(&mut *tx)
+                .await
+            {
+                Ok(id) => id,
+                Err(err) => {
+                    let _ = tx.rollback().await;
+                    return StatusResponse::UserError(format!(
+                        "Failed to find user with email {}: {}",
+                        head_email, err
+                    ));
+                }
+            };
+
+        // Add club head to membership table
+        if let Err(err) = sqlx::query!(
+            "INSERT INTO membership (club_id, user_id, role, privilege_level) VALUES ($1, $2, 'head', 2)",
+            club_id,
+            user_id
+        )
+        .execute(&mut *tx)
+        .await
+        {
+            let _ = tx.rollback().await;
+            return StatusResponse::UserError(err.to_string());
+        }
+    }
+
+    // Commit the transaction
+    match tx.commit().await {
         Ok(_) => StatusResponse::Success,
-        Err(err) => StatusResponse::UserError(err.to_string())
+        Err(err) => StatusResponse::UserError(err.to_string()),
     }
 }
 
