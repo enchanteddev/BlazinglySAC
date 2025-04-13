@@ -19,7 +19,7 @@ use sqlx::{prelude::FromRow, Error};
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
-use crate::{models::AppState, APPPASS};
+use crate::models::AppState;
 
 // static KEYS: Lazy<Keys> = Lazy::new(|| {
 //     let secret = "JWT_SECRET".to_string();
@@ -217,7 +217,7 @@ async fn send_verification(
 
     let user_profile = sqlx::query_as!(
         UserProfile,
-        "SELECT id, name, email, password as password_hash FROM user_profile WHERE email = $1",
+        "SELECT id, name, email, active, password as password_hash FROM user_profile WHERE email = $1",
         payload.email
     )
     .fetch_one(&state.connection)
@@ -232,12 +232,12 @@ async fn send_verification(
         return Err(AuthError::UserAlreadyVerified);
     }
 
-    let token = create_token(user_profile).await?;
+    let token = create_token(&user_profile).await?;
 
     send_email(
         "Login to SAC",
         get_html(&token).as_str(),
-        vec![user_profile.email.as_str()],
+        vec![payload.email.as_str()],
     )
     .await?;
 
@@ -295,7 +295,7 @@ fn get_html(token: &str) -> String{
 "#)
 }
 
-async fn create_token(user_profile: UserProfile) -> Result<String, AuthError> {
+async fn create_token(user_profile: &UserProfile) -> Result<String, AuthError> {
         // add 5 minutes to current unix epoch time as expiry date/time
         let exp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -305,8 +305,8 @@ async fn create_token(user_profile: UserProfile) -> Result<String, AuthError> {
 
     let claims = Claims {
         id: user_profile.id,
-        name: user_profile.name,
-        email: user_profile.email,
+        name: user_profile.name.clone(),
+        email: user_profile.email.clone(),
         exp: usize::try_from(exp).unwrap(),
     };
 
@@ -336,7 +336,7 @@ async fn verify_user(
         UPDATE user_profile
         SET active = true
         WHERE email = $1
-        RETURNING id, name, email, password as password_hash
+        RETURNING id, name, email, active, password as password_hash
         "#,
         claim.email
     )
@@ -350,7 +350,7 @@ async fn verify_user(
         }
     };
 
-    let access_token = create_token(user_profile).await?;
+    let access_token = create_token(&user_profile).await?;
 
     // frontend could use this access_token to directly send user to profile page
     Ok(Redirect::permanent(format!("http://0.0.0.0/3000/verified/{access_token}").as_str()))
@@ -374,7 +374,7 @@ async fn login(
 
     let user_profile = sqlx::query_as!(
         UserProfile,
-        "SELECT id, name, email, password as password_hash FROM user_profile WHERE email = $1",
+        "SELECT id, name, email, active, password as password_hash FROM user_profile WHERE email = $1",
         payload.email
     )
     .fetch_one(&state.connection)
@@ -396,7 +396,7 @@ async fn login(
     }
 
     // Create the authorization token
-    let token = create_token(user_profile).await?;
+    let token = create_token(&user_profile).await?;
 
     // Send the authorized token
     Ok(Json(AuthBody::new(token)))
@@ -417,7 +417,7 @@ async fn register(
         r#"
         INSERT INTO user_profile (name, email, password, active)
         VALUES ($1, $2, $3, false)
-        RETURNING id, name, email, password as password_hash
+        RETURNING id, name, email, active, password as password_hash
         "#,
         payload.name,
         payload.email,
@@ -438,7 +438,7 @@ async fn register(
         },
     };
 
-    let token = create_token(user_profile).await?;
+    let token = create_token(&user_profile).await?;
 
     // send email
     send_email(
