@@ -58,7 +58,8 @@ async fn announcements_full(State(state): State<AppState>) -> Json<Vec<FullAnnou
         sqlx::query_as::<_, FullAnnouncement>(
             "SELECT announcement.id, title, club.name as \"club_name\", content, created_at
             FROM announcement INNER JOIN club 
-            ON club.id = announcement.club_id",
+            ON club.id = announcement.club_id
+            ORDER BY created_at DESC",
         )
         .fetch_all(&state.connection)
         .await
