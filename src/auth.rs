@@ -274,7 +274,7 @@ fn get_html(token: &str) -> String{
             </tr>
             <tr>
               <td align="center">
-                <a href="https://0.0.0.0:5000/auth/verify/{token}"
+                <a href="http://127.0.0.1:5000/auth/verify/{token}"
                    style="background-color: #4CAF50; color: white; padding: 14px 28px;
                           text-decoration: none; font-size: 16px; border-radius: 5px; display: inline-block;">
                   Verify Email
@@ -330,6 +330,8 @@ async fn verify_user(
 
     let claim = token_data.claims;
 
+    let mut tx = state.connection.begin().await.map_err(|_| AuthError::InternalServerError)?;
+
     let user_profile = match sqlx::query_as!(
         UserProfile,
         r#"
@@ -340,7 +342,7 @@ async fn verify_user(
         "#,
         claim.email
     )
-    .fetch_one(&state.connection)
+    .fetch_one(&mut *tx)
     .await
     {
         Ok(profile) => profile,
@@ -351,6 +353,9 @@ async fn verify_user(
     };
 
     let access_token = create_token(&user_profile).await?;
+
+    tx.commit().await.map_err(|_| AuthError::InternalServerError)?;
+    // to prevent update to commit in case error occurs.
 
     // frontend could use this access_token to directly send user to profile page
     Ok(Redirect::permanent(format!("http://0.0.0.0/3000/verified/{access_token}").as_str()))
@@ -412,6 +417,8 @@ async fn register(
 
     let hashed_password = hash(payload.password, DEFAULT_COST).expect("Hashing Failed");
 
+    let mut tx = state.connection.begin().await.map_err(|_| AuthError::InternalServerError)?;
+
     let user_profile = match sqlx::query_as!(
         UserProfile,
         r#"
@@ -423,7 +430,7 @@ async fn register(
         payload.email,
         hashed_password
     )
-    .fetch_one(&state.connection)
+    .fetch_one(&mut *tx)
     .await
     {
         Ok(profile) => profile,
@@ -439,7 +446,7 @@ async fn register(
     };
 
     let token = create_token(&user_profile).await?;
-
+    println!("token: {token}");
     // send email
     send_email(
         "Login to SAC",
@@ -448,6 +455,7 @@ async fn register(
     )
     .await?;
 
+    tx.commit().await.map_err(|_| AuthError::InternalServerError)?;
 
     // Send the authorized token
     Ok(Json(ResponseBody {
