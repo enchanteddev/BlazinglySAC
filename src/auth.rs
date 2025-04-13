@@ -236,7 +236,7 @@ async fn send_verification(
 
     send_email(
         "Login to SAC",
-        format!("<a href=\"{token}\">Click Me</a>").as_str(),
+        get_html(&token).as_str(),
         vec![user_profile.email.as_str()],
     )
     .await?;
@@ -247,6 +247,52 @@ async fn send_verification(
             user_profile.email
         ),
     }))
+}
+
+fn get_html(token: &str) -> String{
+    return format!(r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Email</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; padding: 40px; border-radius: 8px;">
+            <tr>
+              <td align="center" style="font-size: 24px; font-weight: bold; color: #333333;">
+                Hello,<br/>
+                Please verify your email to activate your account for the <a href="http://0.0.0.0:3000/">SAC-website</a>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 20px 0; color: #555555;">
+                Click the button below to verify your email address:
+              </td>
+            </tr>
+            <tr>
+              <td align="center">
+                <a href="https://0.0.0.0:5000/auth/verify/{token}"
+                   style="background-color: #4CAF50; color: white; padding: 14px 28px;
+                          text-decoration: none; font-size: 16px; border-radius: 5px; display: inline-block;">
+                  Verify Email
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-top: 20px; font-size: 12px; color: #888888;">
+                If you did not request this, please ignore this email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"#)
 }
 
 async fn create_token(user_profile: UserProfile) -> Result<String, AuthError> {
@@ -397,7 +443,7 @@ async fn register(
     // send email
     send_email(
         "Login to SAC",
-        format!("<a href=\"{token}\">Click Me</a>").as_str(),
+        get_html(&token).as_str(),
         vec![user_profile.email.as_str()],
     )
     .await?;
